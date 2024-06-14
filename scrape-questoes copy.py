@@ -3,7 +3,7 @@ from bs4 import BeautifulSoup # type: ignore
 import sqlite3
 
 def create_database():
-    conn = sqlite3.connect('questoes_tecconcursos.db')
+    conn = sqlite3.connect('questoes_concursos.db')
     cursor = conn.cursor()
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS questoes (
@@ -23,7 +23,7 @@ def create_database():
     conn.close()
 
 def insert_data(data):
-    conn = sqlite3.connect('questoes_tecconcursos.db')
+    conn = sqlite3.connect('questoes_concursos.db')
     cursor = conn.cursor()
     cursor.execute('''
     INSERT INTO questoes (enunciado, alternativas, resposta_correta, explicacao, ano, banca, orgao, prova, disciplina)
@@ -35,7 +35,7 @@ def insert_data(data):
 def get_questoes(url):
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Referer': 'https://www.tecconcursos.com.br/',
+        'Referer': 'https://www.qconcursos.com/',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9'
     }
     
@@ -46,47 +46,41 @@ def get_questoes(url):
         soup = BeautifulSoup(response.content, 'html.parser')
         
         questoes = []
-        for questao in soup.find_all('div', class_='questao-item'):  # Ajuste a classe conforme necessário
+        for questao in soup.find_all('div', class_='q-question-body'):  # Ajuste a classe conforme necessário
             print("Encontrou uma questão!")  # Verificar se está encontrando as questões
             try:
                 # Enunciado da questão
-                enunciado_elem = questao.find('div', class_='questao-conteudo').find('a')
+                enunciado_elem = questao.find('div', class_='q-question-enunciation')
                 enunciado = enunciado_elem.text.strip() if enunciado_elem else None
                 
-                # Informações adicionais da questão
-                header = questao.find('div', class_='questao-header')
-                
-                questao_id_elem = header.find('div', class_='questao-id')
-                questao_id = questao_id_elem.text.strip() if questao_id_elem else None
-                
-                banca_elem = header.find('a', title="Informações da banca")
-                banca = banca_elem.text.strip() if banca_elem else None
-                
-                prova_elem = header.find('a', title="Informações deste concurso")
-                prova = prova_elem.text.strip() if prova_elem else None
-                
-                orgao_elem = header.find('a', title="Informações do Órgão")
-                orgao = orgao_elem.text.strip() if orgao_elem else None
-                
-                disciplina_elem = header.find('a', title="Informações da matéria")
-                disciplina = disciplina_elem.text.strip() if disciplina_elem else None
-                
-                ano_elem = header.find('div', class_='questao-header').find('a', title="Informações deste concurso")
-                ano = ano_elem.text.split('/')[-1] if ano_elem else None
-
                 # Alternativas da questão
-                alternativas_elems = questao.find_all('label', class_='questao-enunciado-alternativa')
-                alternativas = [alt.find('div', class_='questao-enunciado-alternativa-texto').text.strip() for alt in alternativas_elems]
+                alternativas_elems = questao.find_all('label', class_='q-radio-button js-choose-alternative')
+                alternativas = [alt.find('div', class_='q-item-enum js-alternative-content').text.strip() if alt.find('div', class_='q-item-enum js-alternative-content') else None for alt in alternativas_elems]
                 
                 # Resposta correta (se houver)
-                resposta_correta = None
-                for alt in alternativas_elems:
-                    input_elem = alt.find('input', {'disabled': False})
-                    if input_elem:
-                        resposta_correta = alt.find('div', class_='questao-enunciado-alternativa-texto').text.strip()
-                        break
-
-                explicacao = None  # Não há explicação visível diretamente na página inicial
+                resposta_correta_elem = questao.find('div', class_='js-response-correct')
+                resposta_correta = resposta_correta_elem.find('span', class_='js-question-right-answer').text.strip() if resposta_correta_elem and resposta_correta_elem.find('span', class_='js-question-right-answer') else None
+                
+                # Explicação da resposta (se houver)
+                explicacao_elem = questao.find('div', class_='q-answer-info-tip-content')
+                explicacao = explicacao_elem.text.strip() if explicacao_elem else None
+                
+                # Informações adicionais da questão
+                info = questao.find_previous_sibling('div', class_='q-question-info')
+                ano_elem = info.find('span', String="Ano: ") if info else None
+                ano = ano_elem.find("strong").next_sibling.strip() if ano_elem and ano_elem.next_sibling else None
+                
+                banca_elem = info.find('span', String="Banca: ",) if info else None
+                banca = banca_elem.find('strong').text.strip() if banca_elem and banca_elem.find('strong') else None
+                
+                orgao_elem = info.find('span', String="Órgão: ") if info else None
+                orgao = orgao_elem.find('strong').text.strip() if orgao_elem and orgao_elem.find('strong') else None
+                
+                prova_elem = info.find('span', class_="q-exams") if info else None
+                prova = prova_elem.find('a').text.strip() if prova_elem and prova_elem.find('a') else None
+                
+                disciplina_elem = questao.find_previous_sibling('div', class_='q-question-mobile-info').find('span', class_='q-float-right') if questao.find_previous_sibling('div', class_='q-question-mobile-info') else None
+                disciplina = disciplina_elem.text.strip() if disciplina_elem else None
                 
                 questao_data = (enunciado, ', '.join(alternativas) if alternativas else None, resposta_correta, explicacao, ano, banca, orgao, prova, disciplina)
                 questoes.append(questao_data)
@@ -115,7 +109,7 @@ def get_questoes(url):
 
 def main():
     create_database()
-    url = 'https://www.tecconcursos.com.br/questoes/'  # URL do site TecConcursos
+    url = 'https://www.qconcursos.com/questoes-de-concursos/questoes'  # URL do site QConcursos
     questoes = get_questoes(url)
     if questoes:
         print(f"Foram encontradas {len(questoes)} questões.")
